@@ -1,4 +1,4 @@
-FROM debian:jessie
+FROM centos:7
 
 # add our user and group first to make sure their IDs get assigned consistently, regardless of whatever dependencies get added
 RUN groupadd -r mysql && useradd -r -g mysql mysql
@@ -6,44 +6,41 @@ RUN groupadd -r mysql && useradd -r -g mysql mysql
 # add gosu for easy step-down from root
 ENV GOSU_VERSION 1.10
 RUN set -x \
-        && sed -i 's/deb.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list \
-        && apt-get update && apt-get install -y --no-install-recommends ca-certificates wget && rm -rf /var/lib/apt/lists/* \
-        && wget -O /usr/local/bin/gosu "https://github.com/tianon/gosu/releases/download/$GOSU_VERSION/gosu-$(dpkg --print-architecture)" \
-        && wget -O /usr/local/bin/gosu.asc "https://github.com/tianon/gosu/releases/download/$GOSU_VERSION/gosu-$(dpkg --print-architecture).asc" \
+        && curl -o /usr/local/bin/gosu -L https://github.com/tianon/gosu/releases/download/$GOSU_VERSION/gosu-amd64 \
+        && curl -o /usr/local/bin/gosu.asc -L https://github.com/tianon/gosu/releases/download/$GOSU_VERSION/gosu-amd64.asc \
         && export GNUPGHOME="$(mktemp -d)" \
         && gpg --keyserver ha.pool.sks-keyservers.net --recv-keys B42F6819007F00F88E364FD4036A9C25BF357DD4 \
         && gpg --batch --verify /usr/local/bin/gosu.asc /usr/local/bin/gosu \
         && rm -r "$GNUPGHOME" /usr/local/bin/gosu.asc \
         && chmod +x /usr/local/bin/gosu \
-        && gosu nobody true \
-        && apt-get purge -y --auto-remove ca-certificates wget \
-        && sed -i 's/mirrors.aliyun.com/deb.debian.org/g' /etc/apt/sources.list
+        && gosu nobody true
 
 RUN mkdir /docker-entrypoint-initdb.d
 
 RUN set -x \
-        && sed -i 's/deb.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list \
-        && apt-get update \
+        && mv /etc/yum.repos.d/CentOS-Base.repo /etc/yum.repos.d/CentOS-Base.repo.backup \
+        && curl -o /etc/yum.repos.d/CentOS-Base.repo http://mirrors.aliyun.com/repo/Centos-7.repo \
+        && yum makecache \
         ## FATAL ERROR: please install the following Perl modules before executing /usr/local/mysql/scripts/mysql_install_db:
         ## File::Basename
         ## File::Copy
         ## Sys::Hostname
         ## Data::Dumper
-        && apt-get install -y perl --no-install-recommends \
+        && yum install -y perl perl-Data-Dumper\
         ## mysqld: error while loading shared libraries: libaio.so.1: cannot open shared object file: No such file or directory
-        && apt-get install -y libaio1 pwgen \
-        && rm -rf /var/lib/apt/lists/* \
-        && sed -i 's/mirrors.aliyun.com/deb.debian.org/g' /etc/apt/sources.list
-# set the alisql version
+        && yum install -y libaio \
+        && yum clean all \
+        && mv /etc/yum.repos.d/CentOS-Base.repo.backup /etc/yum.repos.d/CentOS-Base.repo
+
 ENV ALISQL_VERSION 5.6.32-6
 
 RUN set -x \
-        && sed -i 's/deb.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list \
-        && apt-get update && apt-get install -y ca-certificates wget --no-install-recommends && rm -rf /var/lib/apt/lists/* \
-        && wget "https://github.com/alibaba/AliSQL/archive/AliSQL-$ALISQL_VERSION.tar.gz" -O alisql.tar.gz \
-        && apt-get purge -y --auto-remove ca-certificates wget \
+        && mv /etc/yum.repos.d/CentOS-Base.repo /etc/yum.repos.d/CentOS-Base.repo.backup \
+        && curl -o /etc/yum.repos.d/CentOS-Base.repo http://mirrors.aliyun.com/repo/Centos-7.repo \
+        && yum makecache \
+        && curl -o alisql.tar.gz -L https://github.com/alibaba/AliSQL/archive/AliSQL-$ALISQL_VERSION.tar.gz \
         && tar -zxf alisql.tar.gz && cd AliSQL-AliSQL-$ALISQL_VERSION \
-        && apt-get update && apt-get install -y git gcc g++ cmake bison libncurses5-dev zlib1g-dev libssl-dev && rm -rf /var/lib/apt/lists/* \
+        && yum install -y gcc gcc-c++ cmake make bison git ncurses-devel openssl-devel \
         && cmake .                             \
            -DCMAKE_BUILD_TYPE="Release"        \
            -DWITH_EMBEDDED_SERVER=0            \
@@ -58,16 +55,15 @@ RUN set -x \
            -DWITH_PERFSCHEMA_STORAGE_ENGINE=1  \
            -DWITH_TOKUDB_STORAGE_ENGINE=1      \
         && make -j `cat /proc/cpuinfo | grep processor| wc -l` && make install \
-        && apt-get purge -y --auto-remove git gcc g++ cmake bison libncurses5-dev zlib1g-dev libssl-dev \
+        && yum autoremove -y gcc gcc-c++ cmake make bison git ncurses-devel openssl-devel \
+        && yum clean all \
         && cd ..  && rm -f alisql.tar.gz && rm -rf AliSQL-AliSQL-$ALISQL_VERSION \
         && rm -rf /usr/local/mysql/mysql-test /usr/local/mysql/sql-bench \
         && rm -rf /usr/local/mysql/bin/mysqltest /usr/local/mysql/bin/mysql_client_test \
         && rm -rf /usr/local/mysql/bin/*-debug /usr/local/mysql/bin/*_embedded \
         && find /usr/local/mysql -type f -name "*.a" -delete \
-        && apt-get update && apt-get install -y binutils && rm -rf /var/lib/apt/lists/* \
         && { find /usr/local/mysql -type f -executable -exec strip --strip-all '{}' + || true; } \
-        && apt-get purge -y --auto-remove binutils \
-        && sed -i 's/mirrors.aliyun.com/deb.debian.org/g' /etc/apt/sources.list
+        && mv /etc/yum.repos.d/CentOS-Base.repo.backup /etc/yum.repos.d/CentOS-Base.repo
 
 ENV PATH $PATH:/usr/local/mysql/bin:/usr/local/mysql/scripts
 
