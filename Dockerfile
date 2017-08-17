@@ -3,6 +3,8 @@ FROM debian:jessie
 # add our user and group first to make sure their IDs get assigned consistently, regardless of whatever dependencies get added
 RUN groupadd -r mysql && useradd -r -g mysql mysql
 
+REMOTE_PATH=https://github.com/tekintian/alisql-docker/raw/master
+
 # add gosu for easy step-down from root
 ENV GOSU_VERSION 1.10
 RUN set -x \
@@ -88,9 +90,10 @@ RUN mkdir -p /var/lib/mysql /var/run/mysqld \
 
 VOLUME /var/lib/mysql
 
-COPY docker-entrypoint.sh /usr/local/bin/
-RUN ln -s usr/local/bin/docker-entrypoint.sh /entrypoint.sh # backwards compat
-ENTRYPOINT ["docker-entrypoint.sh"]
+# Set the entrypoint script.
+ADD ${REMOTE_PATH}/docker-entrypoint.sh /docker-entrypoint.sh
+RUN chmod 777 /docker-entrypoint.sh
+ENTRYPOINT ["/docker-entrypoint.sh"]
 
 EXPOSE 3306
 CMD ["mysqld"]
